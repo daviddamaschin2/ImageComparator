@@ -5,6 +5,8 @@ import org.bytedeco.javacv.FrameGrabber;
 import org.bytedeco.javacv.OpenCVFrameGrabber;
 import org.bytedeco.javacv.Java2DFrameConverter;
 
+import static org.bytedeco.opencv.global.opencv_imgcodecs.imwrite;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -26,6 +28,10 @@ public class Main {
     private SwingWorker<Void, BufferedImage> worker;
     private final Java2DFrameConverter converter = new Java2DFrameConverter();
 
+    //for comparison
+    private BufferedImage image1;
+    private BufferedImage image2;
+
     public Main(){
         imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
         imageLabel.setPreferredSize(new Dimension(640, 480));
@@ -44,6 +50,7 @@ public class Main {
                            BufferedImage image = converter.convert(frame);
                            if(image != null){
                                ImageIO.write(image, "jpg", new File("Capture.jpeg"));
+                               image1 = image;
                            }
                        }
                    }
@@ -65,6 +72,7 @@ public class Main {
                             BufferedImage image = converter.convert(frame);
                             if(image != null){
                                 ImageIO.write(image, "jpg", new File("Capture2.jpeg"));
+                                image2 = image;
                             }
                         }
                     }
@@ -78,9 +86,34 @@ public class Main {
            }).start();
         });
 
+        compareButton.addActionListener(e -> {
+            new Thread(()->{
+                if(image1 != null && image2 != null){
+                    try{
+                        ChangeDetector comparator = new ChangeDetector(25, 100,true);
+                        ChangeDetector.ChangeResult result = comparator.detectChanges("Capture.jpeg", "Capture2.jpeg");
+
+                        // Save results
+                        ImageIO.write(result.visualization, "jpg", new File("changes_detected.jpg"));
+                        ImageIO.write(result.changesOnly, "jpg", new File("changes_only.jpg"));
+
+                        // Print statistics
+                        System.out.println("Changes detected: " + result.totalChanges);
+                        System.out.printf("Changed area: %.2f%%\n", result.changePercentage);
+                        System.out.println("Changed pixels: " + result.changedPixels);
+                    }
+                    catch(Exception ex){
+                        System.out.println(ex.getMessage());
+                    }
+                }
+            }).start();
+        });
+
         JPanel control = new  JPanel();
         control.add(toggleButton);
         control.add(captureButton);
+        control.add(captureButton2);
+        control.add(compareButton);
 
         frame.setLayout(new BorderLayout());
         frame.add(imageLabel, BorderLayout.CENTER);
@@ -92,6 +125,10 @@ public class Main {
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
+                File capture1 = new File("Capture.jpeg");
+                capture1.delete();
+                File capture2 = new File("Capture2.jpeg");
+                capture2.delete();
                 stopCapture();
             }
         });
