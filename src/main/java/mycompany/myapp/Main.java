@@ -7,6 +7,8 @@ import org.bytedeco.javacv.Java2DFrameConverter;
 
 import static org.bytedeco.opencv.global.opencv_imgcodecs.imwrite;
 
+import org.python.util.PythonInterpreter;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -88,23 +90,10 @@ public class Main {
 
         compareButton.addActionListener(e -> {
             new Thread(()->{
-                if(image1 != null && image2 != null){
-                    try{
-                        ChangeDetector comparator = new ChangeDetector(25, 100,true);
-                        ChangeDetector.ChangeResult result = comparator.detectChanges("Capture.jpeg", "Capture2.jpeg");
-
-                        // Save results
-                        ImageIO.write(result.visualization, "jpg", new File("changes_detected.jpg"));
-                        ImageIO.write(result.changesOnly, "jpg", new File("changes_only.jpg"));
-
-                        // Print statistics
-                        System.out.println("Changes detected: " + result.totalChanges);
-                        System.out.printf("Changed area: %.2f%%\n", result.changePercentage);
-                        System.out.println("Changed pixels: " + result.changedPixels);
-                    }
-                    catch(Exception ex){
-                        System.out.println(ex.getMessage());
-                    }
+                if (image1 != null && image2 != null) {
+                    runPythonScript("Capture.jpeg", "Capture2.jpeg");
+                } else {
+                    System.out.println("Both images must be captured first");
                 }
             }).start();
         });
@@ -132,6 +121,36 @@ public class Main {
                 stopCapture();
             }
         });
+    }
+
+    private void runPythonScript(String imagePath1, String imagePath2) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    "venv\\Scripts\\python.exe",
+                    "algorithm.py",
+                    imagePath1,
+                    imagePath2
+            );
+            pb.directory(new File(System.getProperty("user.dir")));
+            pb.redirectErrorStream(true);
+
+            Process process = pb.start();
+
+            // Read output
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println(line);
+                }
+            }
+
+            int exitCode = process.waitFor();
+            System.out.println("Python script exited with code: " + exitCode);
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     private void startCapture(){

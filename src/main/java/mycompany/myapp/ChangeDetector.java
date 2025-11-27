@@ -221,17 +221,6 @@ public class ChangeDetector {
             img2 = resizeImage(img2, img1.getWidth(), img1.getHeight());
         }
 
-        // Align images if enabled
-        if (enableAlignment) {
-            BufferedImage alignedImg2 = alignImages(img1, img2);
-            if (alignedImg2 != null) {
-                img2 = alignedImg2;
-                System.out.println("Alignment applied successfully");
-            } else {
-                System.out.println("Alignment failed, using original img2");
-            }
-        }
-
         // Convert to grayscale
         int[][] gray1 = toGrayscale(img1);
         int[][] gray2 = toGrayscale(img2);
@@ -243,12 +232,10 @@ public class ChangeDetector {
         // Calculate absolute difference
         int[][] diff = absoluteDifference(gray1, gray2);
 
-        // Apply threshold
+        diff = gaussianBlur(diff);
         boolean[][] binaryMask = applyThreshold(diff, threshold);
 
-        // Morphological operations
-        binaryMask = morphologicalClose(binaryMask, 5);
-        binaryMask = morphologicalOpen(binaryMask, 5);
+        binaryMask = fillHoles(binaryMask);
 
         // Find contours
         List<Contour> contours = findContours(binaryMask);
@@ -299,6 +286,57 @@ public class ChangeDetector {
         return gray;
     }
 
+
+    private boolean[][] fillHoles(boolean[][] mask) {
+        int height = mask.length;
+        int width = mask[0].length;
+        boolean[][] result = new boolean[height][width];
+
+        // Copy original mask
+        for (int y = 0; y < height; y++) {
+            System.arraycopy(mask[y], 0, result[y], 0, width);
+        }
+
+        // Flood fill from edges to find background
+        boolean[][] background = new boolean[height][width];
+        java.util.Deque<int[]> queue = new java.util.ArrayDeque<>();
+
+        // Add all edge pixels that are false (background)
+        for (int x = 0; x < width; x++) {
+            if (!mask[0][x]) queue.offer(new int[]{x, 0});
+            if (!mask[height-1][x]) queue.offer(new int[]{x, height-1});
+        }
+        for (int y = 0; y < height; y++) {
+            if (!mask[y][0]) queue.offer(new int[]{0, y});
+            if (!mask[y][width-1]) queue.offer(new int[]{width-1, y});
+        }
+
+        // Flood fill background
+        while (!queue.isEmpty()) {
+            int[] p = queue.poll();
+            int x = p[0], y = p[1];
+
+            if (!inBounds(x, y, width, height) || background[y][x] || mask[y][x]) {
+                continue;
+            }
+
+            background[y][x] = true;
+            queue.offer(new int[]{x+1, y});
+            queue.offer(new int[]{x-1, y});
+            queue.offer(new int[]{x, y+1});
+            queue.offer(new int[]{x, y-1});
+        }
+
+        // Everything not background is foreground (fills holes)
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                result[y][x] = !background[y][x];
+            }
+        }
+
+        return result;
+    }
+
     /**
      * Apply Gaussian blur for noise reduction
      */
@@ -331,6 +369,27 @@ public class ChangeDetector {
             }
         }
         return result;
+    }
+
+    private int[][] gaussianBlur(int[][] diff) {
+        int height = diff.length;
+        int width = diff[0].length;
+        int[][] blurred = new int[height][width];
+        int[][] kernel = {{1, 2, 1}, {2, 4, 2}, {1, 2, 1}};
+        int kernelSum = 16;
+
+        for (int y = 1; y < height - 1; y++) {
+            for (int x = 1; x < width - 1; x++) {
+                int sum = 0;
+                for (int ky = -1; ky <= 1; ky++) {
+                    for (int kx = -1; kx <= 1; kx++) {
+                        sum += diff[y + ky][x + kx] * kernel[ky + 1][kx + 1];
+                    }
+                }
+                blurred[y][x] = sum / kernelSum;
+            }
+        }
+        return blurred;
     }
 
     /**
@@ -498,15 +557,15 @@ public class ChangeDetector {
             contour.minY = Math.min(contour.minY, y);
             contour.maxY = Math.max(contour.maxY, y);
 
-            // Push neighbors (8-way to match your original)
+            // 8-way connectivity (includes diagonals)
             stack.push(new int[]{x + 1, y});
             stack.push(new int[]{x - 1, y});
             stack.push(new int[]{x, y + 1});
             stack.push(new int[]{x, y - 1});
-            stack.push(new int[]{x + 1, y + 1});
-            stack.push(new int[]{x - 1, y - 1});
-            stack.push(new int[]{x + 1, y - 1});
-            stack.push(new int[]{x - 1, y + 1});
+            stack.push(new int[]{x + 1, y + 1});  // diagonal
+            stack.push(new int[]{x - 1, y - 1});  // diagonal
+            stack.push(new int[]{x + 1, y - 1});  // diagonal
+            stack.push(new int[]{x - 1, y + 1});  // diagonal
         }
     }
 
